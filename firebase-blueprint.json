@@ -1,0 +1,112 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Extended user information for AjoDigital",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "bankDetails": {
+          "type": "object",
+          "properties": {
+            "accountNumber": { "type": "string" },
+            "bankName": { "type": "string" },
+            "accountName": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "email", "displayName", "createdAt"]
+    },
+    "Group": {
+      "title": "Savings Group",
+      "description": "A rotating savings group (Ajo/Esusu)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "organizerUid": { "type": "string" },
+        "contributionAmount": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "monthly"] },
+        "maxMembers": { "type": "number" },
+        "currentMemberCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["recruiting", "active", "completed"] },
+        "rotationOrder": { "type": "array", "items": { "type": "string" } },
+        "currentCycle": { "type": "number" },
+        "startDate": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "organizerUid", "contributionAmount", "frequency", "maxMembers", "status", "createdAt"]
+    },
+    "Membership": {
+      "title": "Group Membership",
+      "description": "Link between a user and a group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "bankDetails": {
+          "type": "object",
+          "properties": {
+            "accountNumber": { "type": "string" },
+            "bankName": { "type": "string" },
+            "accountName": { "type": "string" }
+          }
+        },
+        "payoutTurn": { "type": "number" },
+        "joinedAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "left"] }
+      },
+      "required": ["id", "groupId", "userUid", "displayName", "joinedAt", "status"]
+    },
+    "Contribution": {
+      "title": "Contribution",
+      "description": "A single payment by a member for a cycle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "cycleNumber": { "type": "number" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "submitted", "verified", "flagged"] },
+        "proofUrl": { "type": "string" },
+        "submittedAt": { "type": "number" },
+        "verifiedAt": { "type": "number" },
+        "verifiedBy": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "groupId", "userUid", "cycleNumber", "amount", "status", "createdAt"]
+    },
+    "Payout": {
+      "title": "Payout",
+      "description": "A disbursement to a member",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "userUid": { "type": "string" },
+        "cycleNumber": { "type": "number" },
+        "amount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "disbursed"] },
+        "disbursedAt": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "groupId", "userUid", "cycleNumber", "amount", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "UserProfile", "description": "User profiles" },
+    "/groups/{groupId}": { "schema": "Group", "description": "Savings groups" },
+    "/memberships/{membershipId}": { "schema": "Membership", "description": "Group memberships" },
+    "/contributions/{contributionId}": { "schema": "Contribution", "description": "Cycle contributions" },
+    "/payouts/{payoutId}": { "schema": "Payout", "description": "Cycle payouts" }
+  }
+}

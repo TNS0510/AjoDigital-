@@ -1,0 +1,211 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (required)
+    //   - photoURL: string (optional)
+    //   - bankDetails: map (optional)
+    //   - createdAt: number (required)
+    //
+    // Collection: groups
+    // Document ID: groupId
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - description: string (optional)
+    //   - organizerUid: string (required)
+    //   - contributionAmount: number (required)
+    //   - frequency: string (required, daily|weekly|monthly)
+    //   - maxMembers: number (required)
+    //   - currentMemberCount: number (required)
+    //   - status: string (required, recruiting|active|completed)
+    //   - rotationOrder: list (required)
+    //   - currentCycle: number (required)
+    //   - startDate: number (optional)
+    //   - createdAt: number (required)
+    //
+    // Collection: memberships
+    // Document ID: membershipId
+    // Fields:
+    //   - id: string (required)
+    //   - groupId: string (required)
+    //   - userUid: string (required)
+    //   - payoutTurn: number (required)
+    //   - joinedAt: number (required)
+    //   - status: string (required, active|left)
+    //
+    // Collection: contributions
+    // Document ID: contributionId
+    // Fields:
+    //   - id: string (required)
+    //   - groupId: string (required)
+    //   - userUid: string (required)
+    //   - cycleNumber: number (required)
+    //   - amount: number (required)
+    //   - status: string (required, pending|submitted|verified|flagged)
+    //   - proofUrl: string (optional)
+    //   - submittedAt: number (optional)
+    //   - verifiedAt: number (optional)
+    //   - verifiedBy: string (optional)
+    //   - createdAt: number (required)
+    //
+    // Collection: payouts
+    // Document ID: payoutId
+    // Fields:
+    //   - id: string (required)
+    //   - groupId: string (required)
+    //   - userUid: string (required)
+    //   - cycleNumber: number (required)
+    //   - amount: number (required)
+    //   - status: string (required, pending|disbursed)
+    //   - disbursedAt: number (optional)
+    //   - createdAt: number (required)
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "ajibrin38@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userUid;
+    }
+
+    function isOrganizer(groupId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/groups/$(groupId)).data.organizerUid == request.auth.uid;
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email) &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.createdAt is number;
+    }
+
+    function isValidGroup(data) {
+      return data.keys().hasAll(['id', 'name', 'organizerUid', 'contributionAmount', 'frequency', 'maxMembers', 'status', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.organizerUid == request.auth.uid &&
+             data.contributionAmount is number && data.contributionAmount > 0 &&
+             data.frequency in ['daily', 'weekly', 'monthly'] &&
+             data.maxMembers is number && data.maxMembers >= 2 &&
+             data.status in ['recruiting', 'active', 'completed'] &&
+             data.createdAt is number;
+    }
+
+    function isValidCounterUpdate(groupId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentMemberCount']) &&
+             request.resource.data.currentMemberCount == resource.data.currentMemberCount + 1 &&
+             getAfter(/databases/$(database)/documents/memberships/$(request.resource.id)).data.userUid == request.auth.uid;
+    }
+
+    function isValidMembership(data) {
+      return data.keys().hasAll(['id', 'groupId', 'userUid', 'displayName', 'joinedAt', 'status']) &&
+             data.id is string &&
+             data.groupId is string &&
+             data.userUid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 &&
+             (!('bankDetails' in data) || (
+               data.bankDetails.keys().hasAll(['accountNumber', 'bankName', 'accountName']) &&
+               data.bankDetails.accountNumber is string &&
+               data.bankDetails.bankName is string &&
+               data.bankDetails.accountName is string
+             )) &&
+             data.joinedAt is number &&
+             data.status in ['active', 'left'];
+    }
+
+    function isValidContribution(data) {
+      return data.keys().hasAll(['id', 'groupId', 'userUid', 'cycleNumber', 'amount', 'status', 'createdAt']) &&
+             data.id is string &&
+             data.groupId is string &&
+             data.userUid is string &&
+             data.cycleNumber is number &&
+             data.amount is number &&
+             data.status in ['pending', 'submitted', 'verified', 'flagged'] &&
+             data.createdAt is number;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /groups/{groupId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidGroup(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (isOrganizer(groupId) && isValidGroup(request.resource.data)) ||
+        (isValidCounterUpdate(groupId))
+      );
+    }
+
+    match /memberships/{membershipId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid && isValidMembership(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (request.auth.uid == resource.data.userUid && isValidMembership(request.resource.data)) ||
+        (isOrganizer(resource.data.groupId))
+      );
+    }
+
+    match /contributions/{contributionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid && isValidContribution(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (resource.data.userUid == request.auth.uid && isValidContribution(request.resource.data)) ||
+        (isOrganizer(resource.data.groupId))
+      );
+    }
+
+    match /payouts/{payoutId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOrganizer(request.resource.data.groupId);
+      allow update: if isAuthenticated() && isOrganizer(resource.data.groupId);
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}
